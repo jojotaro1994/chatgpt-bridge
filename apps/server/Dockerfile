@@ -13,7 +13,7 @@ FROM node:20-alpine AS build
 WORKDIR /repo
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
 
 # Copy lockfiles + workspace files first (cache-friendly)
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.base.json ./
