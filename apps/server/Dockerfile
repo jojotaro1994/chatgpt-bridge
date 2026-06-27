@@ -16,7 +16,7 @@ WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 
 # Copy lockfiles + workspace files first (cache-friendly)
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml pnpm-workspace.yaml.bak .npmrc tsconfig.base.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.base.json ./
 # Copy only what the server depends on (with package.jsons for cache hits)
 COPY packages/shared/package.json          packages/shared/
 COPY packages/shared/tsconfig.json         packages/shared/
