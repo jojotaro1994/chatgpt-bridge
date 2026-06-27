@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+coverage/
+.turbo/
+*.tsbuildinfo
+data/
+uploads/
+trace/
+
+# Next.js
+.next/
+apps/web/.next/
+apps/web/out/
+
+# tsbuildinfo
+apps/*/tsconfig.tsbuildinfo
+packages/*/tsconfig.tsbuildinfo

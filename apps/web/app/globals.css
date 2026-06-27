@@ -1,0 +1,56 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --panel: #161a22;
+  --panel-2: #1c212c;
+  --border: #2a3140;
+  --text: #e6e9ef;
+  --muted: #8a93a6;
+  --accent: #5b9dff;
+  --danger: #ff6b6b;
+  --good: #5bd17b;
+  --warn: #ffb454;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+a { color: var(--accent); text-decoration: none; }
+button { font: inherit; cursor: pointer; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; }
+button:hover { background: #232938; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+input, textarea, select {
+  font: inherit; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); padding: 8px 10px; border-radius: 6px; outline: none;
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+
+.row { display: flex; gap: 12px; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.muted { color: var(--muted); }
+.tag { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+.tag.good { color: var(--good); border-color: #2c5a3a; }
+.tag.warn { color: var(--warn); border-color: #5a4a2c; }
+.tag.danger { color: var(--danger); border-color: #5a2c2c; }
+.h1 { font-size: 22px; font-weight: 600; margin: 0; }
+.h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+.kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
