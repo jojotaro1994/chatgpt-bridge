@@ -239,6 +239,25 @@ function handleRunnerWs(ws: WebSocket, req: IncomingMessage): void {
       case 'event':
         if (!runnerId) return;
         store.upsertDevice({ ...store.getDevice(runnerId)!, status: 'online', last_seen: nowIso() } as Device);
+        // Mirror event into store so /history shows runner-produced messages
+        // and /api/sessions reflects live status. Subscribers (WS clients) still
+        // get the event via the dispatcher fan-out.
+        if (msg.event.type === 'session.message') {
+          store.appendMessage({
+            session_id: msg.event.session_id,
+            role: msg.event.message.role,
+            content: msg.event.message.content,
+            attachments: msg.event.message.attachments,
+          });
+        } else if (msg.event.type === 'session.started') {
+          store.updateSession(msg.event.session_id, { status: 'running' });
+        } else if (msg.event.type === 'session.completed') {
+          store.updateSession(msg.event.session_id, { status: 'completed' });
+        } else if (msg.event.type === 'session.failed') {
+          store.updateSession(msg.event.session_id, { status: 'failed' });
+        } else if (msg.event.type === 'session.status_changed') {
+          store.updateSession(msg.event.session_id, { status: msg.event.to });
+        }
         dispatcher.dispatch(msg.event);
         return;
     }
