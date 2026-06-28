@@ -7,6 +7,7 @@ import {
 } from '@e2e-bridge/shared';
 import { logger } from './logger.js';
 import { safeEq, consumeRunnerPairingToken } from './auth.js';
+import { runnerManager } from './runner-manager.js';
 import { store } from './store.js';
 import { dispatcher, type Unsubscribe } from './dispatcher.js';
 import { fakeRunner } from './fake.js';
@@ -221,6 +222,7 @@ function handleRunnerWs(ws: WebSocket, req: IncomingMessage): void {
         capabilities: msg.capabilities,
       });
       dispatcher.dispatch({ type: 'device.online', ts: nowIso(), device });
+      runnerManager.add(runnerId, ws);
       sendToRunner(ws, {
         type: 'hello_ack',
         runner_id: runnerId,
@@ -244,6 +246,7 @@ function handleRunnerWs(ws: WebSocket, req: IncomingMessage): void {
 
   ws.on('close', () => {
     if (runnerId) {
+      runnerManager.remove(runnerId);
       store.upsertDevice({ ...store.getDevice(runnerId)!, status: 'offline', last_seen: nowIso() } as Device);
       dispatcher.dispatch({ type: 'device.offline', ts: nowIso(), device_id: runnerId });
       logger.info('runner ws closed', { runner_id: runnerId });

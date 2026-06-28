@@ -13,6 +13,7 @@ import { isValidAdminToken, bearerToken } from './auth.js';
 import { store } from './store.js';
 import { dispatcher } from './dispatcher.js';
 import { fakeRunner } from './fake.js';
+import { runnerManager } from './runner-manager.js';
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? '';
 const UPLOAD_DIR  = process.env.UPLOAD_DIR ?? '/tmp/e2e-bridge-uploads';
@@ -197,8 +198,24 @@ const routes: Route[] = [
       session_id: session.id,
       message: userMsg,
     });
-    // Kick fake stream
-    void fakeRunner.onClientMessage(session, body.content);
+    // Forward to a real runner if one is online; otherwise use the built-in
+    // FakeRunner. The runner's streamed events come back via the runner's WS
+    // and are dispatched through the same EventDispatcher.
+    const runner = runnerManager.pick();
+    if (runner) {
+      const ok = runnerManager.send(runner.runnerId, {
+        type: 'run_message',
+        session_id: session.id,
+        content: body.content,
+        attachments: body.attachments,
+      });
+      if (!ok) {
+        // Runner went away between pick and send; fall back.
+        void fakeRunner.onClientMessage(session, body.content);
+      }
+    } else {
+      void fakeRunner.onClientMessage(session, body.content);
+    }
     return json(ctx.res, 201, userMsg);
   }),
 
@@ -211,7 +228,19 @@ const routes: Route[] = [
     const parsed = Command.safeParse(body);
     if (!parsed.success) return err(ctx.res, 400, 'BAD_REQUEST', parsed.error.issues[0]?.message ?? 'invalid command');
 
-    fakeRunner.onClientCommand(session, parsed.data, ctx.userId ?? 'admin');
+    const runner = runnerManager.pick();
+    if (runner) {
+      const ok = runnerManager.send(runner.runnerId, {
+        type: 'run_command',
+        session_id: session.id,
+        command: parsed.data,
+      });
+      if (!ok) {
+        fakeRunner.onClientCommand(session, parsed.data, ctx.userId ?? 'admin');
+      }
+    } else {
+      fakeRunner.onClientCommand(session, parsed.data, ctx.userId ?? 'admin');
+    }
     return json(ctx.res, 202, { accepted: true, command: parsed.data });
   }),
 
