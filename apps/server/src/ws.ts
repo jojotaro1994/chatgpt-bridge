@@ -6,7 +6,7 @@ import {
   type Event, type Device,
 } from '@e2e-bridge/shared';
 import { logger } from './logger.js';
-import { safeEq, consumeRunnerPairingToken } from './auth.js';
+import { safeEq, consumeRunnerPairingToken, resolveToken } from './auth.js';
 import { runnerManager } from './runner-manager.js';
 import { store } from './store.js';
 import { dispatcher, type Unsubscribe } from './dispatcher.js';
@@ -82,17 +82,24 @@ function handleClientWs(ws: WebSocket, req: IncomingMessage): void {
 
     const msg = result.data;
 
-    // First message must be `hello` with a valid token.
+    // First message must be `hello` with a valid token (admin or paired device).
     if (!authed) {
       if (msg.type !== 'hello') return sendErr(ws, 'UNAUTHORIZED', 'hello first');
-      if (!safeEq(msg.token, ADMIN_TOKEN)) return sendErr(ws, 'UNAUTHORIZED', 'bad token');
+      const tok = resolveToken(msg.token, ADMIN_TOKEN, store);
+      if (tok.role === 'none') return sendErr(ws, 'UNAUTHORIZED', 'bad token');
       authed = true;
+      const user_id = tok.role === 'admin' ? 'admin' : (tok.deviceId ?? 'device');
       sendToClient(ws, {
         type: 'hello_ack',
-        user_id: 'admin',
+        user_id,
         server_version: '0.0.1',
       });
-      logger.info('client ws authed');
+      logger.info('client ws authed', { role: tok.role, device_id: tok.deviceId });
+      // record last_seen for paired devices
+      if (tok.deviceId) {
+        const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+        store.touchPaired(tok.deviceId, ip);
+      }
       return;
     }
 

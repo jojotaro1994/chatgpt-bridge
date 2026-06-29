@@ -124,6 +124,57 @@ export const Device = z.object({
 });
 export type Device = z.infer<typeof Device>;
 
+// ============================================================================
+// Device pairing (security layer above ADMIN_TOKEN)
+// ============================================================================
+
+/** Platform the device is pairing from. 'mobile' covers iOS/Android; 'web' is the PWA. */
+export const DevicePlatform = z.enum(['ios', 'android', 'web', 'desktop', 'cli', 'other']);
+export type DevicePlatform = z.infer<typeof DevicePlatform>;
+
+export const DeviceTokenStatus = z.enum(['active', 'revoked']);
+export type DeviceTokenStatus = z.infer<typeof DeviceTokenStatus>;
+
+/** A paired device. The `token` is the secret returned ONCE at /api/pair time. */
+export const PairedDevice = z.object({
+  id: Id,
+  name: z.string().min(1).max(100),
+  platform: DevicePlatform,
+  user_agent: z.string().max(255).optional(),
+  paired_at: Timestamp,
+  last_seen_at: Timestamp.optional(),
+  last_seen_ip: z.string().max(64).optional(),
+  status: DeviceTokenStatus,
+});
+export type PairedDevice = z.infer<typeof PairedDevice>;
+
+/** Request body for POST /api/pair (admin-only). */
+export const PairRequest = z.object({
+  name: z.string().min(1).max(100),
+  platform: DevicePlatform,
+  user_agent: z.string().max(255).optional(),
+});
+export type PairRequest = z.infer<typeof PairRequest>;
+
+/** Response body. `token` is the only time this value is returned. */
+export const PairResponse = z.object({
+  device: PairedDevice,
+  token: z.string().min(1),     // raw device token, save it now
+});
+export type PairResponse = z.infer<typeof PairResponse>;
+
+/** Request body for POST /api/pair/revoke (admin-only). */
+export const RevokeRequest = z.object({
+  device_id: Id,
+});
+export type RevokeRequest = z.infer<typeof RevokeRequest>;
+
+/** Response body for GET /api/pair/list (admin-only). */
+export const PairedDeviceList = z.object({
+  devices: z.array(PairedDevice),
+});
+export type PairedDeviceList = z.infer<typeof PairedDeviceList>;
+
 export const HitlRequest = z.object({
   id: Id,
   session_id: Id,

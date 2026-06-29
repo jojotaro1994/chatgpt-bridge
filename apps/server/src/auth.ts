@@ -38,6 +38,35 @@ export function isValidAdminToken(presented: string | null, expected: string): b
 }
 
 /**
+ * Role of a presented bearer token. ADMIN = the single env-stored admin token
+ * (used for pairing and privileged operations). DEVICE = a paired device token
+ * (the most common case for normal use).
+ */
+export type TokenRole = 'admin' | 'device' | 'none';
+
+export interface ResolvedToken {
+  role: TokenRole;
+  /** When role === 'device': the device id; otherwise undefined. */
+  deviceId?: string;
+}
+
+/**
+ * Resolve a presented bearer token to a role. Returns role='none' if neither
+ * admin nor any active device token matches.
+ */
+export function resolveToken(
+  presented: string | null,
+  adminToken: string,
+  store: import('./store.js').Store,
+): ResolvedToken {
+  if (!presented) return { role: 'none' };
+  if (adminToken && safeEq(presented, adminToken)) return { role: 'admin' };
+  const rec = store.getPairedByToken(presented);
+  if (rec) return { role: 'device', deviceId: rec.id };
+  return { role: 'none' };
+}
+
+/**
  * Validate a runner pairing token. Pairing tokens are single-use — once a runner
  * successfully pairs, we replace it with a fresh random. Until then, the same
  * token is accepted.

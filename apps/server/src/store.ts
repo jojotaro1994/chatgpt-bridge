@@ -1,18 +1,34 @@
 import type {
-  Session, Message, Attachment, HitlRequest, Device,
+  Session, Message, Attachment, HitlRequest, Device, PairedDevice,
 } from '@e2e-bridge/shared';
 import { newId, nowIso } from './ids.js';
+import { randomBytes } from 'node:crypto';
 
 /**
  * In-memory store. Replace with SQLite in a later milestone if durability is needed.
  * Maps keyed by id; secondary indexes for lookups by session/repo/etc.
+ *
+ * Paired-device table:
+ *   - id:          stable device id (returned to client at /api/pair)
+ *   - token:       bearer secret (returned ONCE at pair time; clients must save it)
+ *   - device:      metadata (name, platform, paired_at, last_seen, status)
+ *   - rev:         revocation flag (true = killed; queries skip)
+ * Token format: "dt_" + 32 base64url chars.
  */
+export interface PairedRecord {
+  id: string;
+  token: string;
+  device: PairedDevice;
+  rev: boolean;
+}
+
 export class Store {
   readonly sessions   = new Map<string, Session>();
   readonly messages   = new Map<string, Message>();        // message_id -> Message
   readonly attachments= new Map<string, Attachment>();    // upload_id -> Attachment
   readonly hitl       = new Map<string, HitlRequest>();   // hitl_id -> HitlRequest
-  readonly devices    = new Map<string, Device>();        // device_id -> Device
+  readonly devices    = new Map<string, Device>();        // device_id -> Device (runners)
+  readonly paired     = new Map<string, PairedRecord>();  // device_id -> PairedRecord (clients)
 
   /** message_id -> messages keyed by session_id */
   readonly messagesBySession = new Map<string, Set<string>>();
@@ -112,6 +128,81 @@ export class Store {
 
   getDevice(id: string): Device | undefined {
     return this.devices.get(id);
+  }
+
+  // -------- Paired devices (security layer) --------
+
+  /**
+   * Issue a new device token. Returns the raw token (save now, never returned again)
+   * and the public record. The `rev` flag is false initially.
+   */
+  issuePairedDevice(input: {
+    name: string;
+    platform: PairedDevice['platform'];
+    user_agent?: string;
+  }): { record: PairedRecord; token: string } {
+    const id = newId('d');
+    const token = 'dt_' + randomBytes(24).toString('base64url');
+    const now = nowIso();
+    const record: PairedRecord = {
+      id,
+      token,
+      rev: false,
+      device: {
+        id,
+        name: input.name,
+        platform: input.platform,
+        user_agent: input.user_agent,
+        paired_at: now,
+        last_seen_at: undefined,
+        last_seen_ip: undefined,
+        status: 'active',
+      },
+    };
+    this.paired.set(id, record);
+    return { record, token };
+  }
+
+  /** Find a paired device by raw token. Returns undefined if missing or revoked. */
+  getPairedByToken(token: string): PairedRecord | undefined {
+    if (!token.startsWith('dt_')) return undefined;
+    for (const rec of this.paired.values()) {
+      if (rec.token === token) {
+        if (rec.rev) return undefined;
+        return rec;
+      }
+    }
+    return undefined;
+  }
+
+  getPaired(id: string): PairedRecord | undefined {
+    const rec = this.paired.get(id);
+    if (!rec || rec.rev) return undefined;
+    return rec;
+  }
+
+  listPaired(): PairedRecord[] {
+    return Array.from(this.paired.values()).sort((a, b) =>
+      b.device.paired_at.localeCompare(a.device.paired_at),
+    );
+  }
+
+  /** Mark a paired device as revoked. Idempotent. */
+  revokePaired(id: string): boolean {
+    const rec = this.paired.get(id);
+    if (!rec) return false;
+    rec.rev = true;
+    rec.device = { ...rec.device, status: 'revoked' };
+    this.paired.set(id, rec);
+    return true;
+  }
+
+  /** Record an access event on a paired device (last_seen_at + last_seen_ip). */
+  touchPaired(id: string, ip?: string): void {
+    const rec = this.paired.get(id);
+    if (!rec || rec.rev) return;
+    rec.device = { ...rec.device, last_seen_at: nowIso(), last_seen_ip: ip };
+    this.paired.set(id, rec);
   }
 }
 

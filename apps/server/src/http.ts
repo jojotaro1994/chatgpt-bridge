@@ -9,7 +9,7 @@ import {
 } from '@e2e-bridge/shared';
 import { newId, nowIso } from './ids.js';
 import { logger } from './logger.js';
-import { isValidAdminToken, bearerToken } from './auth.js';
+import { isValidAdminToken, bearerToken, resolveToken } from './auth.js';
 import { store } from './store.js';
 import { dispatcher } from './dispatcher.js';
 import { fakeRunner } from './fake.js';
@@ -29,6 +29,8 @@ interface HttpCtx {
   params: Record<string, string>;
   body?: unknown;
   userId?: string;
+  /** True if the presented token is the env-stored admin token (privileged). */
+  isAdmin?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -137,6 +139,49 @@ const routes: Route[] = [
     const ok = isValidAdminToken(body.token ?? null, ADMIN_TOKEN);
     if (!ok) return err(ctx.res, 401, 'UNAUTHORIZED', 'token invalid');
     return json(ctx.res, 200, { ok: true });
+  }),
+
+  // ---- pairing (admin-only: issue a new device token) ----
+  compileRoute('POST', '/api/pair', async (ctx) => {
+    if (!ctx.isAdmin) return err(ctx.res, 403, 'FORBIDDEN', 'pair requires admin token');
+    const { PairRequest } = await import('@e2e-bridge/shared');
+    const body = (ctx.body ?? {}) as { name?: string; platform?: string; user_agent?: string };
+    const parsed = PairRequest.safeParse(body);
+    if (!parsed.success) return err(ctx.res, 400, 'BAD_REQUEST', parsed.error.issues[0]?.message ?? 'invalid pair request');
+    const ua = parsed.data.user_agent ?? (ctx.req.headers['user-agent']?.toString() ?? '').slice(0, 255);
+    const { record, token } = store.issuePairedDevice({
+      name: parsed.data.name,
+      platform: parsed.data.platform,
+      user_agent: ua || undefined,
+    });
+    logger.info('device paired', { device_id: record.id, name: record.device.name, platform: record.device.platform });
+    return json(ctx.res, 201, { device: record.device, token });
+  }),
+
+  // ---- list paired devices (admin-only) ----
+  compileRoute('GET', '/api/pair/list', (ctx) => {
+    if (!ctx.isAdmin) return err(ctx.res, 403, 'FORBIDDEN', 'admin only');
+    const all = store.listPaired();
+    return json(ctx.res, 200, { devices: all.map((r) => r.device) });
+  }),
+
+  // ---- revoke a paired device (admin-only) ----
+  compileRoute('POST', '/api/pair/revoke', async (ctx) => {
+    if (!ctx.isAdmin) return err(ctx.res, 403, 'FORBIDDEN', 'admin only');
+    const { RevokeRequest } = await import('@e2e-bridge/shared');
+    const body = (ctx.body ?? {}) as { device_id?: string };
+    const parsed = RevokeRequest.safeParse(body);
+    if (!parsed.success) return err(ctx.res, 400, 'BAD_REQUEST', parsed.error.issues[0]?.message ?? 'invalid revoke request');
+    const ok = store.revokePaired(parsed.data.device_id);
+    if (!ok) return err(ctx.res, 404, 'NOT_FOUND', 'device not found');
+    logger.warn('device revoked', { device_id: parsed.data.device_id });
+    return json(ctx.res, 200, { ok: true });
+  }),
+
+  // ---- /api/devices (runners; admin-only to view all) ----
+  compileRoute('GET', '/api/devices', (ctx) => {
+    if (!ctx.isAdmin) return err(ctx.res, 403, 'FORBIDDEN', 'admin only');
+    return json(ctx.res, 200, { devices: store.listDevices() });
   }),
 
   // ---- devices ----
@@ -485,11 +530,18 @@ export async function httpHandler(req: IncomingMessage, res: ServerResponse): Pr
     });
   }
 
-  // Auth (skip for /health and OPTIONS)
+  // Auth (skip for /health and OPTIONS).
+  // Accepts either the env-stored ADMIN_TOKEN OR a paired device_token.
+  // /api/pair* is the only path that requires ADMIN_TOKEN explicitly.
   const presented = bearerToken(req.headers);
-  const authed = isValidAdminToken(presented, ADMIN_TOKEN);
-  if (!authed) {
-    return err(res, 401, 'UNAUTHORIZED', 'missing or invalid bearer token');
+  const token = resolveToken(presented, ADMIN_TOKEN, store);
+  if (token.role === 'none') {
+    return err(res, 401, 'UNAUTHORIZED', 'missing or invalid bearer token (pair first via POST /api/pair)');
+  }
+  if (token.deviceId) {
+    // record last_seen for paired devices
+    const ip = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+    store.touchPaired(token.deviceId, ip);
   }
 
   // Static-serve uploaded files (read-only)
@@ -528,7 +580,11 @@ export async function httpHandler(req: IncomingMessage, res: ServerResponse): Pr
     }
   }
 
-  const ctx: HttpCtx = { req, res, url, method: req.method ?? 'GET', params: found.params, body, userId: 'admin' };
+  const ctx: HttpCtx = {
+    req, res, url, method: req.method ?? 'GET', params: found.params, body,
+    userId: token.role === 'admin' ? 'admin' : (token.deviceId ?? 'device'),
+    isAdmin: token.role === 'admin',
+  };
   try {
     await found.route.handler(ctx);
   } catch (e) {

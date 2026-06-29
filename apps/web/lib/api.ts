@@ -58,6 +58,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision, note }),
     }),
+  // ---- Pairing (admin-only) ----
+  pair: (body: { name: string; platform: 'ios' | 'android' | 'web' | 'desktop' | 'cli' | 'other' }) =>
+    request<{ device: import('@e2e-bridge/shared').PairedDevice; token: string }>('/api/pair', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, user_agent: navigator.userAgent.slice(0, 255) }),
+    }),
+  listPaired: () =>
+    request<{ devices: import('@e2e-bridge/shared').PairedDevice[] }>('/api/pair/list'),
+  revokePaired: (device_id: string) =>
+    request<{ ok: boolean }>('/api/pair/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ device_id }),
+    }),
   upload: async (file: File): Promise<Attachment> => {
     const base = storage.getServerUrl().replace(/\/+$/, '');
     const fd = new FormData();
