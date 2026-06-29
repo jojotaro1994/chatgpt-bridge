@@ -20,3 +20,7 @@ apps/web/out/
 # tsbuildinfo
 apps/*/tsconfig.tsbuildinfo
 packages/*/tsconfig.tsbuildinfo
+deploy-*.tgz
+# deploy-export.tgz (allowed for one-off deploys)
+deploy-*.tgz
+!deploy-web-export.tgz
